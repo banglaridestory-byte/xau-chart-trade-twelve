@@ -99,7 +99,7 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 wss.on('connection', (socket) => {
   const reject = () => {
     socket.send(JSON.stringify({ type: 'error', message: 'Unauthorized' }));
-    setTimeout(() => socket.close(1008, 'Unauthorized'), 150);
+    setTimeout(() => socket.terminate(), 150);
   };
   const timer = setTimeout(reject, 10_000);
   socket.once('message', (raw) => {
