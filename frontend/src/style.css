@@ -363,6 +363,91 @@ button {
   border-top: 1px solid var(--border);
 }
 
+.terminal.locked {
+  display: none;
+}
+
+.login-overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: radial-gradient(circle at 50% 35%, #171c23, var(--bg) 65%);
+}
+
+.login-overlay.hidden {
+  display: none;
+}
+
+.login-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(360px, 100%);
+  padding: 28px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+}
+
+.login-brand {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+.login-brand span {
+  color: var(--accent);
+}
+
+.login-hint {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.login-card label {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.login-card input {
+  width: 100%;
+  padding: 9px 10px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+}
+
+.login-card input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.login-card button {
+  margin-top: 6px;
+  padding: 10px;
+  color: var(--bg);
+  background: var(--accent);
+  border: 0;
+  border-radius: 4px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.login-error {
+  min-height: 16px;
+  margin: 0;
+  color: var(--down);
+  font-size: 12px;
+}
+
 @media (max-width: 900px) {
   .topbar {
     flex-wrap: wrap;

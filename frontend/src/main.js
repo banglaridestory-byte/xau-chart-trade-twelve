@@ -4,8 +4,12 @@ import { DataFeed } from './dataFeed.js';
 import { DEFAULT_TIMEFRAME, TIMEFRAMES } from './timeframes.js';
 
 const element = (id) => document.getElementById(id);
-const chart = createChartController(element('chart'));
+const AUTH_KEY = 'xauusd-auth';
+const AUTH_USER = 'admin';
+const AUTH_PASSWORD = 'chart';
 
+let chart = null;
+let started = false;
 let currentTimeframe = DEFAULT_TIMEFRAME;
 let loadedTimeframe = null;
 let candles = [];
@@ -207,10 +211,44 @@ async function bootstrap() {
   }, 2_500);
 }
 
-bootstrap();
+function startApp() {
+  if (started) return;
+  started = true;
+  chart = createChartController(element('chart'));
+  element('login').classList.add('hidden');
+  element('app').classList.remove('locked');
+  bootstrap();
+}
+
+function setupLogin() {
+  const form = element('login-form');
+  const error = element('login-error');
+  const password = element('login-password');
+
+  if (sessionStorage.getItem(AUTH_KEY) === AUTH_USER) {
+    startApp();
+    return;
+  }
+
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const username = element('login-username').value.trim();
+    if (username === AUTH_USER && password.value === AUTH_PASSWORD) {
+      sessionStorage.setItem(AUTH_KEY, AUTH_USER);
+      error.textContent = '';
+      startApp();
+      return;
+    }
+    error.textContent = 'Invalid username or password.';
+    password.value = '';
+    password.focus();
+  });
+}
+
+setupLogin();
 
 setInterval(() => {
   element('clock').textContent = new Date().toLocaleTimeString([], { hour12: false });
 }, 1_000);
 
-window.addEventListener('beforeunload', () => feed.disconnect());
+window.addEventListener('beforeunload', () => feed?.disconnect());
