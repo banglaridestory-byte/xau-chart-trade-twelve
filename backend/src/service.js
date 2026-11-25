@@ -4,6 +4,7 @@ import { CandleStore, TickAggregator } from './store.js';
 import { deduplicateCandles } from './validate.js';
 import { detectSMC } from './smc.js';
 import { keyPool } from './keys.js';
+import { isFresh, readHistory, writeHistory } from './historyCache.js';
 
 export class DataService {
   constructor() {
@@ -29,6 +30,7 @@ export class DataService {
     this.smcTimers = new Map();
     this.historyFetchedAt = new Map();
     this.gapRefreshAt = new Map();
+    this.cacheTimers = new Map();
     this.pollCursor = 0;
 
     this.status = {
@@ -85,7 +87,9 @@ export class DataService {
   stop() {
     this.#stopPolling();
     for (const timer of this.smcTimers.values()) clearTimeout(timer);
+    for (const timer of this.cacheTimers.values()) clearTimeout(timer);
     this.smcTimers.clear();
+    this.cacheTimers.clear();
     if (this.stopAdapter) this.stopAdapter();
     this.stopAdapter = null;
     for (const client of this.clients.keys()) client.close();
@@ -134,6 +138,7 @@ export class DataService {
       if (subscribed === timeframe && client.readyState === 1) client.send(encoded);
     }
     this.#scheduleAnalysis(timeframe);
+    this.#scheduleCacheWrite(timeframe);
   }
 
   #analyze(timeframe) {
@@ -157,6 +162,18 @@ export class DataService {
       }
     }, CONFIG.smcDebounceMs);
     this.smcTimers.set(timeframe, timer);
+  }
+
+  #scheduleCacheWrite(timeframe) {
+    if (this.cacheTimers.has(timeframe)) return;
+    const timer = setTimeout(() => {
+      this.cacheTimers.delete(timeframe);
+      writeHistory(timeframe, this.store.get(timeframe, CONFIG.maxCachedBars), { merge: true })
+        .catch((error) => {
+          this.status.reason = `History cache write failed: ${error.message}`;
+        });
+    }, 5_000);
+    this.cacheTimers.set(timeframe, timer);
   }
 
   #publishSMC(timeframe) {
@@ -250,15 +267,37 @@ export class DataService {
     }
 
     const task = (async () => {
-      const candles = deduplicateCandles(
-        await this.adapter.fetchCandles(timeframe, CONFIG.timeframeLimit),
-      );
+      const cached = await readHistory(timeframe);
+      let candles;
+      let source = 'upstream';
+
+      if (!force && isFresh(cached, timeframe)) {
+        candles = deduplicateCandles(cached.candles);
+        source = 'cache';
+      } else {
+        try {
+          candles = deduplicateCandles(
+            await this.adapter.fetchCandles(timeframe, CONFIG.timeframeLimit),
+          );
+        } catch (error) {
+          if (cached.candles.length === 0) throw error;
+          candles = deduplicateCandles(cached.candles);
+          source = 'stale-cache';
+          if (this.status.state !== 'live') {
+            this.#setState('delayed', `Using cached history: ${error.message}`);
+          }
+        }
+      }
+
       if (candles.length === 0) throw new Error('No historical candles returned');
 
       this.store.setHistory(timeframe, candles);
       this.active.add(timeframe);
-      this.historyFetchedAt.set(timeframe, Date.now());
-      this.status.lastHistoryAt = Date.now();
+      this.historyFetchedAt.set(timeframe, source === 'cache' ? cached.updatedAt : Date.now());
+      this.status.lastHistoryAt = this.historyFetchedAt.get(timeframe);
+      if (source === 'upstream') {
+        await writeHistory(timeframe, candles);
+      }
       this.#analyze(timeframe);
       this.#broadcast({
         type: 'history',
@@ -299,6 +338,7 @@ export class DataService {
       cachedBars: cached,
       smcCounts,
       credits: keyPool.snapshot(),
+      cache: { backend: process.env.REDIS_URL ? 'redis+file' : 'file' },
     };
   }
 

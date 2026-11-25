@@ -24,8 +24,13 @@ export default async function handler(request, response) {
   }
 
   try {
-    const candles = await fetchHistory(timeframe, 500);
-    response.status(200).json({ type: 'smc', timeframe, smc: analyze(timeframe, candles) });
+    const history = await fetchHistory(timeframe, 500);
+    response.status(200).json({
+      type: 'smc',
+      timeframe,
+      smc: analyze(timeframe, history.candles),
+      cache: { cached: history.cached, stale: history.stale },
+    });
   } catch (error) {
     fail(response, error);
   }

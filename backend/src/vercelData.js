@@ -1,5 +1,6 @@
 import { TIMEFRAMES, isTimeframe } from './vercelTimeframes.js';
 import { keyPool } from './keys.js';
+import { closeCache, isFresh, readHistory, writeHistory } from './historyCache.js';
 import { deduplicateCandles, normalizeCandle } from './validate.js';
 import { detectSMC } from './smc.js';
 
@@ -17,12 +18,18 @@ export async function fetchHistory(timeframe, limit = 500) {
   const definition = TIMEFRAMES[timeframe];
   if (!definition) throw new Error(`Unsupported timeframe: ${timeframe}`);
 
-  const lease = keyPool.acquireRest();
+  const cached = await readHistory(timeframe);
+  if (isFresh(cached, timeframe)) {
+    return { candles: cached.candles.slice(-limit), cached: true, stale: false };
+  }
+
+  let lease = null;
   try {
+    lease = keyPool.acquireRest();
     const url = new URL(`${REST_BASE}/time_series`);
     url.searchParams.set('symbol', 'XAU/USD');
     url.searchParams.set('interval', definition.interval);
-    url.searchParams.set('outputsize', String(limit));
+    url.searchParams.set('outputsize', '500');
     url.searchParams.set('order', 'asc');
     url.searchParams.set('timezone', 'UTC');
     url.searchParams.set('format', 'JSON');
@@ -39,12 +46,25 @@ export async function fetchHistory(timeframe, limit = 500) {
       throw new Error('Twelve Data returned no historical candles');
     }
 
-    return deduplicateCandles(
+    const candles = deduplicateCandles(
       payload.values.map((bar) => normalizeCandle(bar, definition.seconds)),
-    ).slice(-limit);
+    );
+    await writeHistory(timeframe, candles);
+    return { candles: candles.slice(-limit), cached: false, stale: false };
   } catch (error) {
-    lease.release();
+    lease?.fail(error);
+    lease?.release();
+    if (cached.candles.length > 0) {
+      return {
+        candles: cached.candles.slice(-limit),
+        cached: true,
+        stale: true,
+        warning: error.message,
+      };
+    }
     throw error;
+  } finally {
+    await closeCache();
   }
 }
 
