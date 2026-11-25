@@ -9,7 +9,22 @@ const CACHE_FILE =
 const DAY_SECONDS = 86_400;
 
 let redisClient = null;
+let lastRedisError = null;
 let fileQueue = Promise.resolve();
+
+function createRedis(url) {
+  const client = new Redis(url, {
+    lazyConnect: true,
+    enableOfflineQueue: false,
+    maxRetriesPerRequest: 1,
+    connectTimeout: 10_000,
+    retryStrategy: (attempt) => Math.min(attempt * 250, 2_000),
+  });
+  client.on('error', (error) => {
+    lastRedisError = error.message;
+  });
+  return client;
+}
 
 function emptyEntry() {
   return { candles: [], updatedAt: 0 };
@@ -35,17 +50,10 @@ async function getRedis() {
   const url = process.env.REDIS_URL;
   if (!url) return null;
 
-  if (!redisClient) {
-    redisClient = new Redis(url, {
-      lazyConnect: true,
-      enableOfflineQueue: false,
-      maxRetriesPerRequest: 1,
-      connectTimeout: 5_000,
-      retryStrategy: () => null,
-    });
-    redisClient.on('error', () => {});
+  if (!redisClient || redisClient.status === 'end') {
+    redisClient?.disconnect();
+    redisClient = createRedis(url);
   }
-
   if (redisClient.status === 'wait') await redisClient.connect();
   return redisClient;
 }
@@ -172,7 +180,7 @@ export async function cacheStats() {
     result.timeframes = result.redis.timeframes;
     result.bars = result.redis.bars;
   } catch (error) {
-    result.redis.error = error.message;
+    result.redis.error = lastRedisError || error.message;
   } finally {
     await closeCache();
   }
