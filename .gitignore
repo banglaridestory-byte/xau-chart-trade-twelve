@@ -1,0 +1,9 @@
+.vercel
+node_modules/
+**/node_modules/
+backend/.env
+backend/.env.*
+!backend/.env.example
+frontend/dist/
+*.log
+coverage/

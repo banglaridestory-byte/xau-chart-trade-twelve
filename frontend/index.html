@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b0e11" />
+    <title>XAUUSD Trading Terminal</title>
+  </head>
+  <body>
+    <div id="app" class="terminal">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">XAU<span>USD</span></span>
+          <span class="brand-sub">SPOT GOLD / US DOLLAR</span>
+        </div>
+        <nav id="timeframes" class="timeframes" aria-label="Chart timeframe"></nav>
+        <div class="topbar-right">
+          <div id="status" class="status" data-state="connecting">
+            <span class="status-dot"></span>
+            <span id="status-text">CONNECTING</span>
+          </div>
+          <div id="clock" class="clock">--:--:--</div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="chart-panel">
+          <div class="chart-toolbar">
+            <div class="legend" id="legend">
+              <span class="legend-symbol">XAUUSD</span>
+              <span id="legend-ohlc">O — H — L — C —</span>
+            </div>
+            <div class="toolbar-tools" id="tools">
+              <span class="tool-hint">▲ BUY / ▼ SELL · dashed lines: entry / stop / target</span>
+            </div>
+          </div>
+          <div id="chart" class="chart"></div>
+        </section>
+
+        <aside class="side-panel">
+          <section class="card">
+            <h2>Last price</h2>
+            <div id="last-price" class="last-price">—</div>
+            <div id="price-change" class="price-change">—</div>
+            <div class="quote-row"><span>Source</span><strong id="source">—</strong></div>
+            <div class="quote-row"><span>Last tick</span><strong id="last-tick">—</strong></div>
+            <div class="quote-row"><span>Bars</span><strong id="bar-count">0</strong></div>
+          </section>
+          <section class="card">
+            <h2>Indicators</h2>
+            <ul class="indicator-list">
+              <li>Volume <span class="tag">phase 7</span></li>
+              <li>EMA 9 / 21 <span class="tag">phase 7</span></li>
+              <li>EMA 20 / 50 <span class="tag">phase 7</span></li>
+              <li>RSI 14 <span class="tag">phase 7</span></li>
+              <li>VWAP <span class="tag">phase 7</span></li>
+            </ul>
+          </section>
+          <section class="card">
+            <h2>SMC / ICT detector</h2>
+            <div id="smc-counts" class="smc-counts">
+              <span class="muted">Waiting for analysis…</span>
+            </div>
+            <div id="signal-list" class="signal-list"></div>
+            <p class="muted disclaimer">Heuristic structure signals from validated candles, not financial advice.</p>
+          </section>
+        </aside>
+      </main>
+
+      <footer class="footer">
+        <span id="footer-status">Waiting for data…</span>
+        <span>Lightweight Charts v5 · Backend WebSocket</span>
+      </footer>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

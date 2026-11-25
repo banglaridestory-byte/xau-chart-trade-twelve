@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: xauusd-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm ci --no-audit --no-fund
+    startCommand: node src/server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TWELVE_DATA_API_KEYS
+        sync: false
+      - key: CLIENT_ORIGIN
+        value: https://xauusd-chart-pi.vercel.app
+      - key: DATA_PROVIDER
+        value: twelvedata
+      - key: TIMEFRAME_LIMIT
+        value: "500"
+      - key: MAX_CREDITS_PER_MINUTE
+        value: "8"
+      - key: MAX_CREDITS_PER_DAY
+        value: "800"
+      - key: POLL_INTERVAL_MS
+        value: "240000"
+      - key: MAX_POLL_PER_CYCLE
+        value: "2"
+      - key: HISTORY_TTL_MS
+        value: "900000"
