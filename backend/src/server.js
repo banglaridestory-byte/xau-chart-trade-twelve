@@ -97,18 +97,22 @@ app.get('/api/smc', async (request, response) => {
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
 wss.on('connection', (socket) => {
-  const timer = setTimeout(() => socket.close(4401, 'Unauthorized'), 10_000);
+  const reject = () => {
+    socket.send(JSON.stringify({ type: 'error', message: 'Unauthorized' }));
+    setTimeout(() => socket.close(1008, 'Unauthorized'), 150);
+  };
+  const timer = setTimeout(reject, 10_000);
   socket.once('message', (raw) => {
     clearTimeout(timer);
     let message;
     try {
       message = JSON.parse(raw.toString());
     } catch {
-      socket.close(4401, 'Unauthorized');
+      reject();
       return;
     }
     if (message?.type !== 'auth' || !verifyToken(message.token)) {
-      socket.close(4401, 'Unauthorized');
+      reject();
       return;
     }
     service.addClient(socket);
