@@ -140,11 +140,44 @@ export async function writeHistory(timeframe, candles, { merge = false } = {}) {
 
 export async function cacheStats() {
   const all = await readFile();
-  return {
-    backend: process.env.REDIS_URL ? 'redis+file' : 'file',
+  const file = {
     timeframes: Object.keys(all).length,
     bars: Object.values(all).reduce((total, entry) => total + (entry?.candles?.length ?? 0), 0),
   };
+  const result = {
+    backend: process.env.REDIS_URL ? 'redis+file' : 'file',
+    file,
+    redis: { reachable: false, error: null, timeframes: 0, bars: 0 },
+    timeframes: file.timeframes,
+    bars: file.bars,
+  };
+
+  if (!process.env.REDIS_URL) return result;
+
+  try {
+    const redis = await getRedis();
+    const keys = await redis.keys(`${REDIS_PREFIX}*`);
+    const entries = await Promise.all(
+      keys.map(async (key) => {
+        const raw = await redis.get(key);
+        return raw ? normalizeEntry(JSON.parse(raw)) : null;
+      }),
+    );
+    result.redis = {
+      reachable: true,
+      error: null,
+      timeframes: entries.filter(Boolean).length,
+      bars: entries.reduce((total, entry) => total + (entry?.candles?.length ?? 0), 0),
+    };
+    result.timeframes = result.redis.timeframes;
+    result.bars = result.redis.bars;
+  } catch (error) {
+    result.redis.error = error.message;
+  } finally {
+    await closeCache();
+  }
+
+  return result;
 }
 
 export async function closeCache() {
