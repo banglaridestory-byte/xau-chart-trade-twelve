@@ -36,7 +36,7 @@ function fromMemory(timeframe, limit) {
   };
 }
 
-async function fetchBackend(timeframe, limit) {
+async function fetchBackend(timeframe, limit, token) {
   const base = (process.env.PUBLIC_BACKEND_URL || '').replace(/\/+$/, '');
   if (!base) return null;
 
@@ -46,7 +46,10 @@ async function fetchBackend(timeframe, limit) {
     url.searchParams.set('limit', String(Math.min(limit, 500)));
     const response = await fetch(url, {
       signal: AbortSignal.timeout(8_000),
-      headers: { Accept: 'application/json' },
+      headers: {
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
     });
     if (!response.ok) return null;
 
@@ -70,11 +73,11 @@ async function fetchBackend(timeframe, limit) {
   }
 }
 
-export async function fetchHistory(timeframe, limit = 500) {
+export async function fetchHistory(timeframe, limit = 500, token = '') {
   const definition = TIMEFRAMES[timeframe];
   if (!definition) throw new Error(`Unsupported timeframe: ${timeframe}`);
 
-  const backend = await fetchBackend(timeframe, limit);
+  const backend = await fetchBackend(timeframe, limit, token);
   if (backend) return backend;
 
   const cached = fromMemory(timeframe, limit);

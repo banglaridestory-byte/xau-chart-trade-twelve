@@ -1,14 +1,15 @@
 import './style.css';
 import { createChartController } from './chart.js';
 import { DataFeed } from './dataFeed.js';
+import { createDrawingTools } from './drawingTools.js';
 import { DEFAULT_TIMEFRAME, TIMEFRAMES } from './timeframes.js';
 
 const element = (id) => document.getElementById(id);
-const AUTH_KEY = 'xauusd-auth';
-const AUTH_USER = 'admin';
-const AUTH_PASSWORD = 'chart';
+const TOKEN_KEY = 'xauusd-token';
 
+let authToken = sessionStorage.getItem(TOKEN_KEY) || '';
 let chart = null;
+let drawings = null;
 let started = false;
 let currentTimeframe = DEFAULT_TIMEFRAME;
 let loadedTimeframe = null;
@@ -16,6 +17,22 @@ let candles = [];
 let currentSMC = null;
 let currentStatus = { state: 'connecting' };
 let feed = null;
+
+function tokenAlive(token) {
+  try {
+    const raw = token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(atob(raw));
+    return Number.isFinite(payload.exp) && payload.exp > Date.now();
+  } catch {
+    return false;
+  }
+}
+
+function showLogin(message = '') {
+  element('login-error').textContent = message;
+  element('app').classList.add('locked');
+  element('login').classList.remove('hidden');
+}
 
 function formatPrice(value) {
   return Number(value).toFixed(2);
@@ -170,6 +187,7 @@ for (const timeframe of TIMEFRAMES) {
       item.classList.toggle('active', item.dataset.timeframe === currentTimeframe);
     }
     element('legend-ohlc').textContent = `Loading ${timeframe.label}…`;
+    drawings?.setTimeframe(currentTimeframe);
     feed?.setTimeframe(currentTimeframe);
   });
   timeframeNav.appendChild(button);
@@ -178,7 +196,15 @@ for (const timeframe of TIMEFRAMES) {
 async function bootstrap() {
   let endpoints = {};
   try {
-    const response = await fetch('/api/config');
+    const response = await fetch('/api/config', {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    if (response.status === 401) {
+      sessionStorage.removeItem(TOKEN_KEY);
+      authToken = '';
+      showLogin('Session expired — sign in again.');
+      return;
+    }
     if (response.ok) endpoints = await response.json();
   } catch {
     // The same-origin REST endpoints remain available without config discovery.
@@ -186,6 +212,7 @@ async function bootstrap() {
 
   feed = new DataFeed({
     endpoints,
+    token: authToken,
     onSnapshot: applySnapshot,
     onHistory: applySnapshot,
     onCandle: applyCandle,
@@ -215,33 +242,77 @@ function startApp() {
   if (started) return;
   started = true;
   chart = createChartController(element('chart'));
+  drawings = createDrawingTools({
+    container: element('chart'),
+    chart: chart.chart,
+    series: chart.candleSeries,
+    getTimeframe: () => currentTimeframe,
+  });
+  drawings.setTimeframe(currentTimeframe);
+
+  const tools = [...document.querySelectorAll('[data-tool]')];
+  for (const button of tools) {
+    button.addEventListener('click', () => {
+      const tool = button.dataset.tool;
+      if (tool === 'clear') {
+        drawings.clear();
+        return;
+      }
+      for (const item of tools) item.classList.toggle('active', item.dataset.tool === tool);
+      drawings.setTool(tool);
+    });
+  }
+
+  element('logout').addEventListener('click', () => {
+    sessionStorage.removeItem(TOKEN_KEY);
+    window.location.reload();
+  });
+
   element('login').classList.add('hidden');
   element('app').classList.remove('locked');
   bootstrap();
 }
 
-function setupLogin() {
+async function setupLogin() {
   const form = element('login-form');
   const error = element('login-error');
   const password = element('login-password');
+  const submit = form.querySelector('button[type="submit"]');
 
-  if (sessionStorage.getItem(AUTH_KEY) === AUTH_USER) {
+  if (authToken && tokenAlive(authToken)) {
     startApp();
     return;
   }
+  if (authToken) {
+    sessionStorage.removeItem(TOKEN_KEY);
+    authToken = '';
+  }
 
-  form.addEventListener('submit', (event) => {
+  form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const username = element('login-username').value.trim();
-    if (username === AUTH_USER && password.value === AUTH_PASSWORD) {
-      sessionStorage.setItem(AUTH_KEY, AUTH_USER);
-      error.textContent = '';
+    error.textContent = '';
+    submit.disabled = true;
+    try {
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: element('login-username').value.trim(),
+          password: password.value,
+        }),
+      });
+      if (!response.ok) throw new Error('Invalid username or password.');
+      const payload = await response.json();
+      authToken = payload.token;
+      sessionStorage.setItem(TOKEN_KEY, authToken);
       startApp();
-      return;
+    } catch (cause) {
+      error.textContent = cause.message;
+      password.value = '';
+      password.focus();
+    } finally {
+      submit.disabled = false;
     }
-    error.textContent = 'Invalid username or password.';
-    password.value = '';
-    password.focus();
   });
 }
 

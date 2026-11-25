@@ -4,7 +4,8 @@ import {
   fetchHistory,
   isTimeframe,
 } from '../backend/src/vercelData.js';
-import { allowCors, fail, rejectMethod } from '../backend/src/vercelHttp.js';
+import { allowCors, fail, rejectMethod, requireAuth } from '../backend/src/vercelHttp.js';
+import { tokenFromHeader } from '../backend/src/auth.js';
 
 export default async function handler(request, response) {
   allowCors(response);
@@ -16,6 +17,7 @@ export default async function handler(request, response) {
     rejectMethod(response);
     return;
   }
+  if (!requireAuth(request, response)) return;
 
   const timeframe = request.query.timeframe || DEFAULT_TIMEFRAME;
   if (!isTimeframe(timeframe)) {
@@ -24,7 +26,9 @@ export default async function handler(request, response) {
   }
 
   try {
-    const history = await fetchHistory(timeframe, 500);
+    const token =
+      tokenFromHeader(request.headers?.authorization) || request.query.token || '';
+    const history = await fetchHistory(timeframe, 500, token);
     response.status(200).json({
       type: 'smc',
       timeframe,

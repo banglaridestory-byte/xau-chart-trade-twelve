@@ -1,4 +1,4 @@
-import { allowCors } from '../backend/src/vercelHttp.js';
+import { allowCors, requireAuth } from '../backend/src/vercelHttp.js';
 
 export default function handler(request, response) {
   allowCors(response);
@@ -6,6 +6,7 @@ export default function handler(request, response) {
     response.status(204).end();
     return;
   }
+  if (!requireAuth(request, response)) return;
 
   const raw = (process.env.PUBLIC_BACKEND_URL || '').trim().replace(/\/$/, '');
   const apiUrl = raw || null;

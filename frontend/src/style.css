@@ -148,6 +148,21 @@ button {
   font-size: 12px;
 }
 
+.logout-button {
+  padding: 5px 9px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.logout-button:hover {
+  color: var(--text);
+  background: var(--panel-2);
+}
+
 .workspace {
   display: flex;
   flex: 1;
@@ -189,9 +204,46 @@ button {
 }
 
 .chart {
+  position: relative;
   flex: 1;
   min-height: 320px;
   width: 100%;
+}
+
+.drawing-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.toolbar-tools {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.tool-button {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tool-button:hover {
+  color: var(--text);
+  background: var(--panel-2);
+}
+
+.tool-button.active {
+  color: var(--accent);
+  background: var(--accent-dim);
+  border-color: rgba(245, 166, 35, 0.45);
 }
 
 .side-panel {

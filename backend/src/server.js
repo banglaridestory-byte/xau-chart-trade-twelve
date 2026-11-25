@@ -5,6 +5,7 @@ import cors from 'cors';
 import { WebSocketServer } from 'ws';
 import { CONFIG, DEFAULT_TIMEFRAME, isTimeframe } from './config.js';
 import { DataService } from './service.js';
+import { tokenFromHeader, verifyToken } from './auth.js';
 
 const app = express();
 const service = new DataService();
@@ -12,6 +13,16 @@ const service = new DataService();
 const allowedOrigins = CONFIG.clientOrigin.split(',').map((origin) => origin.trim()).filter(Boolean);
 app.use(cors({ origin: allowedOrigins.length === 1 ? allowedOrigins[0] : allowedOrigins }));
 app.use(express.json());
+
+app.use('/api', (request, response, next) => {
+  if (request.path === '/health') return next();
+  const token = tokenFromHeader(request.headers.authorization) || request.query.token || '';
+  if (!verifyToken(token)) {
+    response.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+  next();
+});
 
 app.get('/api/health', (_request, response) => {
   response.json(service.health());
@@ -85,7 +96,25 @@ app.get('/api/smc', async (request, response) => {
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
-wss.on('connection', (socket) => service.addClient(socket));
+wss.on('connection', (socket) => {
+  const timer = setTimeout(() => socket.close(4401, 'Unauthorized'), 10_000);
+  socket.once('message', (raw) => {
+    clearTimeout(timer);
+    let message;
+    try {
+      message = JSON.parse(raw.toString());
+    } catch {
+      socket.close(4401, 'Unauthorized');
+      return;
+    }
+    if (message?.type !== 'auth' || !verifyToken(message.token)) {
+      socket.close(4401, 'Unauthorized');
+      return;
+    }
+    service.addClient(socket);
+    socket.send(JSON.stringify({ type: 'authorized' }));
+  });
+});
 
 await service.start();
 

@@ -1,8 +1,9 @@
 const MAX_RECONNECT_MS = 30_000;
 
 export class DataFeed {
-  constructor({ onSnapshot, onHistory, onCandle, onSMC, onStatus, onError, endpoints = {} } = {}) {
+  constructor({ onSnapshot, onHistory, onCandle, onSMC, onStatus, onError, endpoints = {}, token = '' } = {}) {
     this.endpoints = endpoints;
+    this.token = token;
     this.handlers = {
       onSnapshot: onSnapshot ?? (() => {}),
       onHistory: onHistory ?? (() => {}),
@@ -40,6 +41,13 @@ export class DataFeed {
     if (this.socket?.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify(payload));
     }
+  }
+
+  #headers() {
+    return {
+      Accept: 'application/json',
+      ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+    };
   }
 
   #onMessage(raw) {
@@ -136,6 +144,7 @@ export class DataFeed {
 
     socket.addEventListener('open', () => {
       this.attempt = 0;
+      this.#send({ type: 'auth', token: this.token });
       this.#send({ type: 'subscribe', timeframe: this.timeframe });
     });
 
@@ -160,7 +169,8 @@ export class DataFeed {
   async fetchCandles(timeframe, limit = 500) {
     const base = this.#apiBase();
     const path = `/api/candles?timeframe=${encodeURIComponent(timeframe)}&limit=${limit}`;
-    const response = await fetch(`${base}${path}`);
+    const response = await fetch(`${base}${path}`, { headers: this.#headers() });
+    if (response.status === 401) throw new Error('Session expired — sign in again');
     if (!response.ok) throw new Error(`History request failed: ${response.status}`);
     return response.json();
   }
@@ -168,7 +178,8 @@ export class DataFeed {
   async fetchSMC(timeframe) {
     const base = this.#apiBase();
     const path = `/api/smc?timeframe=${encodeURIComponent(timeframe)}`;
-    const response = await fetch(`${base}${path}`);
+    const response = await fetch(`${base}${path}`, { headers: this.#headers() });
+    if (response.status === 401) throw new Error('Session expired — sign in again');
     if (!response.ok) throw new Error(`SMC request failed: ${response.status}`);
     return response.json();
   }

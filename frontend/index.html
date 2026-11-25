@@ -34,6 +34,7 @@
             <span id="status-text">CONNECTING</span>
           </div>
           <div id="clock" class="clock">--:--:--</div>
+          <button id="logout" type="button" class="logout-button" title="Sign out">Sign out</button>
         </div>
       </header>
 
@@ -44,8 +45,15 @@
               <span class="legend-symbol">XAUUSD</span>
               <span id="legend-ohlc">O — H — L — C —</span>
             </div>
-            <div class="toolbar-tools" id="tools">
-              <span class="tool-hint">▲ BUY / ▼ SELL · dashed lines: entry / stop / target</span>
+            <div class="toolbar-tools" id="tools" aria-label="Drawing tools">
+              <button type="button" class="tool-button active" data-tool="cursor" title="Cursor">↖</button>
+              <button type="button" class="tool-button" data-tool="trend" title="Trend line">╱</button>
+              <button type="button" class="tool-button" data-tool="horizontal" title="Horizontal line">─</button>
+              <button type="button" class="tool-button" data-tool="rectangle" title="Rectangle">▭</button>
+              <button type="button" class="tool-button" data-tool="fib" title="Fibonacci retracement">Fib</button>
+              <button type="button" class="tool-button" data-tool="vertical" title="Vertical line">│</button>
+              <button type="button" class="tool-button" data-tool="erase" title="Erase drawing">⌫</button>
+              <button type="button" class="tool-button" data-tool="clear" title="Clear all drawings">Clear</button>
             </div>
           </div>
           <div id="chart" class="chart"></div>
