@@ -28,8 +28,8 @@ export default async function handler(request, response) {
     response.status(200).json({
       type: 'smc',
       timeframe,
-      smc: analyze(timeframe, history.candles),
-      cache: { cached: history.cached, stale: history.stale },
+      smc: history.smc ?? analyze(timeframe, history.candles),
+      cache: { cached: history.cached, stale: history.stale, source: history.source },
     });
   } catch (error) {
     fail(response, error);

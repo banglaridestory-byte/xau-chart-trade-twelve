@@ -25,23 +25,23 @@ export default async function handler(request, response) {
   }
 
   try {
-    const history = await fetchHistory(timeframe, 500);
+    const history = await fetchHistory(timeframe, parseLimit(request.query.limit));
     const status = {
       ...restStatus(),
       ...(history.stale
         ? { reason: `Using cached history: ${history.warning}` }
         : history.cached
-          ? { reason: 'History served from shared cache' }
+          ? { reason: `History served from ${history.source} cache` }
           : {}),
     };
     response.status(200).json({
       symbol: 'XAU/USD',
       symbolLabel: 'XAUUSD',
       timeframe,
-      candles: history.candles.slice(-parseLimit(request.query.limit)),
-      smc: analyze(timeframe, history.candles),
+      candles: history.candles,
+      smc: history.smc ?? analyze(timeframe, history.candles),
       status,
-      cache: { cached: history.cached, stale: history.stale },
+      cache: { cached: history.cached, stale: history.stale, source: history.source },
     });
   } catch (error) {
     fail(response, error);

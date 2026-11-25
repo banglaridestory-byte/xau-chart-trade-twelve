@@ -1,5 +1,4 @@
 import { keyPool } from '../backend/src/keys.js';
-import { cacheStats } from '../backend/src/historyCache.js';
 import { allowCors, rejectMethod, restStatus } from '../backend/src/vercelHttp.js';
 
 export default async function handler(request, response) {
@@ -18,6 +17,6 @@ export default async function handler(request, response) {
     status: restStatus(),
     adapters: [{ name: 'twelvedata', configured: keyPool.configured }],
     credits: keyPool.snapshot(),
-    cache: await cacheStats(),
+    cache: { backend: process.env.PUBLIC_BACKEND_URL ? 'render' : 'none' },
   });
 }
