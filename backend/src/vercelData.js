@@ -1,6 +1,6 @@
 import { TIMEFRAMES, isTimeframe } from './vercelTimeframes.js';
 import { keyPool } from './keys.js';
-import { closeCache, isFresh, readHistory, writeHistory } from './historyCache.js';
+import { isFresh, readHistory, writeHistory } from './historyCache.js';
 import { deduplicateCandles, normalizeCandle } from './validate.js';
 import { detectSMC } from './smc.js';
 
@@ -63,8 +63,6 @@ export async function fetchHistory(timeframe, limit = 500) {
       };
     }
     throw error;
-  } finally {
-    await closeCache();
   }
 }
 

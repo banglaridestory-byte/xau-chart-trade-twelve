@@ -50,11 +50,33 @@ async function getRedis() {
   const url = process.env.REDIS_URL;
   if (!url) return null;
 
-  if (!redisClient || redisClient.status === 'end') {
+  if (!redisClient || redisClient.status === 'end' || redisClient.status === 'close') {
     redisClient?.disconnect();
+    lastRedisError = null;
     redisClient = createRedis(url);
   }
+
   if (redisClient.status === 'wait') await redisClient.connect();
+
+  if (redisClient.status !== 'ready') {
+    const client = redisClient;
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error(`Redis not ready (${client.status}): ${lastRedisError || 'timeout'}`));
+      }, 10_000);
+      const onReady = () => {
+        cleanup();
+        resolve();
+      };
+      const cleanup = () => {
+        clearTimeout(timeout);
+        client.off('ready', onReady);
+      };
+      client.once('ready', onReady);
+    });
+  }
+
   return redisClient;
 }
 
@@ -181,8 +203,6 @@ export async function cacheStats() {
     result.bars = result.redis.bars;
   } catch (error) {
     result.redis.error = lastRedisError || error.message;
-  } finally {
-    await closeCache();
   }
 
   return result;
