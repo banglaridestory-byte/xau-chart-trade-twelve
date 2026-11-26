@@ -75,6 +75,16 @@ export class TwelveDataAdapter {
     return payload.values.map((bar) => normalizeCandle(bar, definition.seconds));
   }
 
+  async fetchPrice() {
+    if (!this.configured) throw new Error('Twelve Data API key is missing');
+    const payload = await this.#get('/price', { symbol: this.symbol });
+    const price = Number(payload?.price);
+    if (!Number.isFinite(price) || price <= 0) {
+      throw new Error('Twelve Data returned an invalid price');
+    }
+    return price;
+  }
+
   async fetchQuote(timeframe) {
     if (!this.configured) throw new Error('Twelve Data API key is missing');
     const definition = this.timeframeMap[timeframe];

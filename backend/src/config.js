@@ -17,9 +17,10 @@ export const CONFIG = {
   heartbeatMs: 10_000,
   reconnectBaseMs: 1_000,
   reconnectMaxMs: 30_000,
-  smcDebounceMs: 400,
-  historyTtlMs: integer(process.env.HISTORY_TTL_MS, 900_000, 60_000, 86_400_000),
-  gapCooldownMs: 600_000,
+  alertPollIntervalMs: integer(process.env.ALERT_POLL_INTERVAL_MS, 30_000, 5_000, 300_000),
+  alertRetryIntervalMs: integer(process.env.ALERT_RETRY_INTERVAL_MS, 60_000, 10_000, 3_600_000),
+  telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
+  telegramChatId: process.env.TELEGRAM_CHAT_ID || '',
   maxCreditsPerMinute: integer(process.env.MAX_CREDITS_PER_MINUTE, 8, 1, 8),
   maxCreditsPerDay: integer(process.env.MAX_CREDITS_PER_DAY, 800, 1, 800),
 };

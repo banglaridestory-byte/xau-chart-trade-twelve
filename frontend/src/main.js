@@ -1,313 +1,254 @@
 import './style.css';
-import { createChartController } from './chart.js';
-import { DataFeed } from './dataFeed.js';
-import { createDrawingTools } from './drawingTools.js';
-import { DEFAULT_TIMEFRAME, TIMEFRAMES } from './timeframes.js';
+import {
+  cancelAlert,
+  createAlert,
+  deleteAlert,
+  discoverApiBase,
+  getAlerts,
+  getToken,
+  login,
+  retryAlert,
+  setToken,
+  tokenAlive,
+} from './api.js';
 
 const element = (id) => document.getElementById(id);
-const TOKEN_KEY = 'xauusd-token';
+const REFRESH_MS = 5_000;
 
-let authToken = sessionStorage.getItem(TOKEN_KEY) || '';
-let chart = null;
-let drawings = null;
+let locked = true;
 let started = false;
-let currentTimeframe = DEFAULT_TIMEFRAME;
-let loadedTimeframe = null;
-let candles = [];
-let currentSMC = null;
-let currentStatus = { state: 'connecting' };
-let feed = null;
+let refreshing = false;
+let refreshTimer = null;
+let latestAlerts = [];
 
-function tokenAlive(token) {
-  try {
-    const raw = token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/');
-    const payload = JSON.parse(atob(raw));
-    return Number.isFinite(payload.exp) && payload.exp > Date.now();
-  } catch {
-    return false;
-  }
-}
+const money = (value) =>
+  Number.isFinite(Number(value)) ? Number(value).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }) : '—';
+
+const time = (value) =>
+  value ? new Date(value).toLocaleString([], { hour12: false, dateStyle: 'medium', timeStyle: 'medium' }) : '—';
+
+const escapeHtml = (value) =>
+  String(value ?? '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[char]);
 
 function showLogin(message = '') {
+  setToken('');
+  locked = true;
+  if (refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = null;
   element('login-error').textContent = message;
   element('app').classList.add('locked');
   element('login').classList.remove('hidden');
 }
 
-function formatPrice(value) {
-  return Number(value).toFixed(2);
+function renderPrice(price) {
+  element('current-price').textContent = money(price?.price);
+  element('price-updated').textContent = time(price?.at);
+  element('price-source').textContent = price?.source
+    ? `${price.provider || 'api'} · ${price.source}`
+    : (price?.provider || '—');
+
+  const status = element('price-status');
+  const state = price?.state || 'connecting';
+  status.dataset.state = state;
+  status.textContent = state.toUpperCase();
+
+  element('price-detail').textContent = price?.reason
+    ? price.reason
+    : price?.price == null
+      ? 'Waiting for the first price from the API…'
+      : `Watching XAU/USD for target crossings`;
 }
 
-function updateLegend(candle) {
-  if (!candle) return;
-  element('legend-ohlc').textContent =
-    `O ${formatPrice(candle.open)}  H ${formatPrice(candle.high)}  ` +
-    `L ${formatPrice(candle.low)}  C ${formatPrice(candle.close)}`;
+function renderTelegram(configured) {
+  element('telegram-hint').textContent = configured
+    ? 'Connected: triggered alerts are sent to the configured Telegram chat.'
+    : 'Telegram is not configured on the server. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID.';
+  element('telegram-hint').classList.toggle('warning', !configured);
 }
 
-function updatePrice() {
-  const last = candles.at(-1);
-  if (!last) return;
-
-  element('last-price').textContent = formatPrice(last.close);
-  const previous = candles.length > 1 ? candles.at(-2).close : last.open;
-  const change = last.close - previous;
-  const percent = previous ? (change / previous) * 100 : 0;
-  const changeElement = element('price-change');
-  changeElement.textContent = `${change >= 0 ? '+' : ''}${formatPrice(change)} (${percent >= 0 ? '+' : ''}${percent.toFixed(2)}%)`;
-  changeElement.className = `price-change ${change >= 0 ? 'up' : 'down'}`;
-  updateLegend(last);
-}
-
-function updateStatus(payload) {
-  const status = payload?.status ?? currentStatus;
-  currentStatus = status;
-
-  const state = status.state ?? 'connecting';
-  element('status').dataset.state = state;
-  element('status-text').textContent = state.toUpperCase();
-  element('source').textContent = status.provider
-    ? `${status.provider} · ${status.stream || 'idle'}`
+function activeCard(alert, current) {
+  const distance = Number.isFinite(Number(current)) && Number.isFinite(Number(alert.target))
+    ? money(Math.abs(Number(alert.target) - Number(current)))
     : '—';
-  element('last-tick').textContent = status.lastTickAt
-    ? new Date(status.lastTickAt).toLocaleTimeString()
-    : '—';
-  element('bar-count').textContent = String(candles.length);
-  element('footer-status').textContent = status.reason
-    ? `${state}: ${status.reason}`
-    : `Data ${state} · provider ${status.provider || 'unknown'}`;
+  return `
+    <article class="alert-card">
+      <div class="alert-main">
+        <span class="badge ${alert.direction}">${alert.direction === 'above' ? 'ABOVE' : 'BELOW'}</span>
+        <strong>${money(alert.target)}</strong>
+        <span class="muted">${money(current)} now · ${distance} away</span>
+      </div>
+      <div class="alert-meta">
+        <span>Created ${time(alert.createdAt)}</span>
+        ${alert.note ? `<span>${escapeHtml(alert.note)}</span>` : ''}
+      </div>
+      <button type="button" class="ghost-button" data-action="cancel" data-id="${escapeHtml(alert.id)}">Cancel</button>
+    </article>`;
 }
 
-const formatSignalTime = (seconds) =>
-  new Date(seconds * 1000).toLocaleTimeString([], { hour12: false });
+function historyCard(alert) {
+  const sent = alert.status === 'triggered' && alert.notified;
+  const failed = alert.status === 'triggered' && !alert.notified;
+  const badge = alert.status === 'cancelled'
+    ? '<span class="badge cancelled">CANCELLED</span>'
+    : sent
+      ? '<span class="badge sent">SENT</span>'
+      : '<span class="badge failed">SEND FAILED</span>';
 
-function renderSMC() {
-  const counts = currentSMC?.counts;
-  element('smc-counts').innerHTML = counts
-    ? [
-        ['FVG', counts.fvgs],
-        ['OB', counts.orderBlocks],
-        ['BOS/CHoCH', counts.structure],
-        ['SWEEP', counts.sweeps],
-        ['ENTRY', counts.signals],
-      ]
-        .map(
-          ([label, value]) =>
-            `<div class="smc-count"><strong>${value}</strong><span>${label}</span></div>`,
-        )
-        .join('')
-    : '<span class="muted">Waiting for analysis…</span>';
-
-  const signals = currentSMC?.signals?.slice(-5).reverse() ?? [];
-  element('signal-list').innerHTML = signals.length
-    ? signals
-        .map(
-          (signal) => `
-          <div class="signal-card ${signal.side}">
-            <div class="signal-head">
-              <span>${signal.side === 'long' ? 'BUY' : 'SELL'} · ${signal.confidence}</span>
-              <span>${formatSignalTime(signal.time)}</span>
-            </div>
-            <div class="quote-row"><span>Entry</span><strong>${formatPrice(signal.entry)}</strong></div>
-            <div class="quote-row"><span>Stop</span><strong>${formatPrice(signal.stopLoss)}</strong></div>
-            <div class="quote-row"><span>Target</span><strong>${formatPrice(signal.takeProfit)}</strong></div>
-            <div class="muted">${signal.status === 'closed' ? `${signal.result} · ` : ''}${signal.reasons.join(' · ')}</div>
-          </div>`,
-        )
-        .join('')
-    : '<p class="muted">No SMC entry setup detected on this timeframe yet.</p>';
+  return `
+    <article class="alert-card">
+      <div class="alert-main">
+        ${badge}
+        <strong>${money(alert.target)}</strong>
+        <span class="muted">${alert.direction === 'above' ? 'crossed above' : 'crossed below'} at ${money(alert.triggeredPrice)}</span>
+      </div>
+      <div class="alert-meta">
+        <span>${time(alert.triggeredAt || alert.createdAt)}</span>
+        ${alert.note ? `<span>${escapeHtml(alert.note)}</span>` : ''}
+        ${alert.notificationError ? `<span class="error-text">${escapeHtml(alert.notificationError)}</span>` : ''}
+      </div>
+      <div class="alert-actions">
+        ${failed ? `<button type="button" class="ghost-button" data-action="retry" data-id="${escapeHtml(alert.id)}">Retry</button>` : ''}
+        <button type="button" class="ghost-button" data-action="delete" data-id="${escapeHtml(alert.id)}">Delete</button>
+      </div>
+    </article>`;
 }
 
-function applySMC(payload) {
-  if (payload.timeframe !== currentTimeframe || !payload.smc) return;
-  currentSMC = payload.smc;
-  chart.setSMC(currentSMC);
-  renderSMC();
+function renderAlerts(payload) {
+  latestAlerts = payload?.alerts || [];
+  const current = payload?.price?.price;
+  const active = latestAlerts.filter((alert) => alert.status === 'active');
+  const history = latestAlerts.filter((alert) => alert.status !== 'active');
+
+  element('active-alerts').innerHTML = active.length
+    ? active.map((alert) => activeCard(alert, current)).join('')
+    : '<p class="empty">No active alerts. Enter a target price above.</p>';
+
+  element('alert-history').innerHTML = history.length
+    ? history.map(historyCard).join('')
+    : '<p class="empty">Triggered and cancelled alerts will appear here.</p>';
+
+  element('active-count').textContent = String(active.length);
 }
 
-function sameCandles(incoming, existing) {
-  const lastIncoming = incoming.at(-1);
-  const lastExisting = existing.at(-1);
-  return (
-    existing.length > 0 &&
-    incoming.length === existing.length &&
-    lastIncoming?.time === lastExisting?.time &&
-    lastIncoming?.close === lastExisting?.close
-  );
-}
-
-function applySnapshot(payload) {
-  if (payload.timeframe !== currentTimeframe || !Array.isArray(payload.candles)) return;
-
-  const freshLoad = loadedTimeframe !== currentTimeframe;
-  if (!freshLoad && sameCandles(payload.candles, candles)) {
-    if (payload.smc) applySMC(payload);
-    updateStatus(payload);
-    return;
-  }
-
-  candles = payload.candles;
-  chart.setHistory(candles, { fit: freshLoad });
-  loadedTimeframe = currentTimeframe;
-  if (payload.smc) applySMC(payload);
-  else renderSMC();
-  updatePrice();
-  updateStatus(payload);
-}
-
-function applyCandle(payload) {
-  if (payload.timeframe !== currentTimeframe || !payload.candle) return;
-  const candle = payload.candle;
-  const last = candles.at(-1);
-  if (last && candle.time < last.time) return;
-  if (last && last.time === candle.time) candles[candles.length - 1] = candle;
-  else candles.push(candle);
-
-  chart.updateCandle(candle);
-  updatePrice();
-  if (payload.status) updateStatus(payload);
-}
-
-const timeframeNav = element('timeframes');
-for (const timeframe of TIMEFRAMES) {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.textContent = timeframe.label;
-  button.dataset.timeframe = timeframe.key;
-  button.className = timeframe.key === currentTimeframe ? 'active' : '';
-  button.addEventListener('click', () => {
-    if (currentTimeframe === timeframe.key) return;
-    currentTimeframe = timeframe.key;
-    loadedTimeframe = null;
-    candles = [];
-    currentSMC = null;
-    chart.setHistory([]);
-    renderSMC();
-    for (const item of timeframeNav.children) {
-      item.classList.toggle('active', item.dataset.timeframe === currentTimeframe);
-    }
-    element('legend-ohlc').textContent = `Loading ${timeframe.label}…`;
-    drawings?.setTimeframe(currentTimeframe);
-    feed?.setTimeframe(currentTimeframe);
-  });
-  timeframeNav.appendChild(button);
-}
-
-async function bootstrap() {
-  let endpoints = {};
+async function refresh() {
+  if (locked || refreshing) return;
+  refreshing = true;
   try {
-    const response = await fetch('/api/config', {
-      headers: { Authorization: `Bearer ${authToken}` },
-    });
-    if (response.status === 401) {
-      sessionStorage.removeItem(TOKEN_KEY);
-      authToken = '';
+    const payload = await getAlerts();
+    renderPrice(payload.price);
+    renderTelegram(payload.telegram?.configured);
+    renderAlerts(payload);
+    element('footer-status').textContent = 'Watching live price · alerts checked automatically';
+  } catch (error) {
+    if (error.status === 401) {
       showLogin('Session expired — sign in again.');
       return;
     }
-    if (response.ok) endpoints = await response.json();
-  } catch {
-    // The same-origin REST endpoints remain available without config discovery.
+    element('footer-status').textContent = `Connection error: ${error.message}`;
+  } finally {
+    refreshing = false;
   }
+}
 
-  feed = new DataFeed({
-    endpoints,
-    token: authToken,
-    onSnapshot: applySnapshot,
-    onHistory: applySnapshot,
-    onCandle: applyCandle,
-    onSMC: applySMC,
-    onStatus: updateStatus,
-    onError: (message) => {
-      element('footer-status').textContent = `Error: ${message}`;
-    },
+async function handleAlertAction(button) {
+  const { action, id } = button.dataset;
+  button.disabled = true;
+  try {
+    if (action === 'cancel') await cancelAlert(id);
+    if (action === 'retry') await retryAlert(id);
+    if (action === 'delete') await deleteAlert(id);
+    await refresh();
+  } catch (error) {
+    if (error.status === 401) showLogin('Session expired — sign in again.');
+    else element('footer-status').textContent = `Action failed: ${error.message}`;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function setupPortal() {
+  const form = element('alert-form');
+  const message = element('form-message');
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const submit = form.querySelector('button[type="submit"]');
+    message.textContent = '';
+    message.className = 'form-message';
+    submit.disabled = true;
+
+    try {
+      await createAlert({
+        target: element('alert-target').value,
+        direction: element('alert-direction').value,
+        note: element('alert-note').value,
+      });
+      form.reset();
+      message.textContent = 'Alert created. We will notify you when the price crosses your target.';
+      message.className = 'form-message success';
+      await refresh();
+    } catch (error) {
+      if (error.status === 401) showLogin('Session expired — sign in again.');
+      else {
+        message.textContent = error.message;
+        message.className = 'form-message error';
+      }
+    } finally {
+      submit.disabled = false;
+    }
   });
 
-  renderSMC();
-  feed.connect();
+  document.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-action]');
+    if (button) handleAlertAction(button);
+  });
 
-  setTimeout(() => {
-    if (candles.length === 0) {
-      feed
-        .fetchCandles(currentTimeframe)
-        .then(applySnapshot)
-        .catch((error) => {
-          element('footer-status').textContent = `History unavailable: ${error.message}`;
-        });
-    }
-  }, 2_500);
+  element('logout').addEventListener('click', () => {
+    setToken('');
+    showLogin();
+  });
 }
 
 function startApp() {
   if (started) return;
   started = true;
-  chart = createChartController(element('chart'));
-  drawings = createDrawingTools({
-    container: element('chart'),
-    chart: chart.chart,
-    series: chart.candleSeries,
-    getTimeframe: () => currentTimeframe,
-  });
-  drawings.setTimeframe(currentTimeframe);
-
-  const tools = [...document.querySelectorAll('[data-tool]')];
-  for (const button of tools) {
-    button.addEventListener('click', () => {
-      const tool = button.dataset.tool;
-      if (tool === 'clear') {
-        drawings.clear();
-        return;
-      }
-      for (const item of tools) item.classList.toggle('active', item.dataset.tool === tool);
-      drawings.setTool(tool);
-    });
-  }
-
-  element('logout').addEventListener('click', () => {
-    sessionStorage.removeItem(TOKEN_KEY);
-    window.location.reload();
-  });
-
   element('login').classList.add('hidden');
   element('app').classList.remove('locked');
-  bootstrap();
+  locked = false;
+  setupPortal();
+  refresh();
+  refreshTimer = setInterval(refresh, REFRESH_MS);
 }
 
 async function setupLogin() {
   const form = element('login-form');
-  const error = element('login-error');
   const password = element('login-password');
   const submit = form.querySelector('button[type="submit"]');
+  const token = getToken();
 
-  if (authToken && tokenAlive(authToken)) {
+  if (token && tokenAlive(token)) {
+    await discoverApiBase();
     startApp();
     return;
   }
-  if (authToken) {
-    sessionStorage.removeItem(TOKEN_KEY);
-    authToken = '';
-  }
+  if (token) setToken('');
+  showLogin();
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    error.textContent = '';
+    element('login-error').textContent = '';
     submit.disabled = true;
     try {
-      const response = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: element('login-username').value.trim(),
-          password: password.value,
-        }),
-      });
-      if (!response.ok) throw new Error('Invalid username or password.');
-      const payload = await response.json();
-      authToken = payload.token;
-      sessionStorage.setItem(TOKEN_KEY, authToken);
+      await login(element('login-username').value.trim(), password.value);
+      password.value = '';
       startApp();
-    } catch (cause) {
-      error.textContent = cause.message;
+    } catch (error) {
+      element('login-error').textContent = error.message;
       password.value = '';
       password.focus();
     } finally {
@@ -316,10 +257,8 @@ async function setupLogin() {
   });
 }
 
-setupLogin();
-
 setInterval(() => {
   element('clock').textContent = new Date().toLocaleTimeString([], { hour12: false });
 }, 1_000);
 
-window.addEventListener('beforeunload', () => feed?.disconnect());
+setupLogin();

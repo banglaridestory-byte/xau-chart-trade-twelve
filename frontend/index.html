@@ -5,13 +5,13 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0b0e11" />
-    <title>XAUUSD Trading Terminal</title>
+    <title>XAUUSD Notification Portal</title>
   </head>
   <body>
     <div id="login" class="login-overlay">
       <form id="login-form" class="login-card">
-        <div class="login-brand">XAU<span>USD</span> TERMINAL</div>
-        <p class="login-hint">Sign in to view the chart</p>
+        <div class="login-brand">XAU<span>USD</span> ALERTS</div>
+        <p class="login-hint">Sign in to manage your price notifications</p>
         <label for="login-username">Username</label>
         <input id="login-username" name="username" type="text" autocomplete="username" required autofocus />
         <label for="login-password">Password</label>
@@ -24,74 +24,82 @@
     <div id="app" class="terminal locked">
       <header class="topbar">
         <div class="brand">
-          <span class="brand-mark">XAU<span>USD</span></span>
-          <span class="brand-sub">SPOT GOLD / US DOLLAR</span>
+          <span class="brand-mark">XAU<span>USD</span> ALERTS</span>
+          <span class="brand-sub">PRICE NOTIFICATION PORTAL</span>
         </div>
-        <nav id="timeframes" class="timeframes" aria-label="Chart timeframe"></nav>
         <div class="topbar-right">
-          <div id="status" class="status" data-state="connecting">
-            <span class="status-dot"></span>
-            <span id="status-text">CONNECTING</span>
-          </div>
+          <span id="price-status" class="price-status" data-state="connecting">CONNECTING</span>
           <div id="clock" class="clock">--:--:--</div>
-          <button id="logout" type="button" class="logout-button" title="Sign out">Sign out</button>
+          <button id="logout" type="button" class="ghost-button" title="Sign out">Sign out</button>
         </div>
       </header>
 
-      <main class="workspace">
-        <section class="chart-panel">
-          <div class="chart-toolbar">
-            <div class="legend" id="legend">
-              <span class="legend-symbol">XAUUSD</span>
-              <span id="legend-ohlc">O — H — L — C —</span>
-            </div>
-            <div class="toolbar-tools" id="tools" aria-label="Drawing tools">
-              <button type="button" class="tool-button active" data-tool="cursor" title="Cursor">↖</button>
-              <button type="button" class="tool-button" data-tool="trend" title="Trend line">╱</button>
-              <button type="button" class="tool-button" data-tool="horizontal" title="Horizontal line">─</button>
-              <button type="button" class="tool-button" data-tool="rectangle" title="Rectangle">▭</button>
-              <button type="button" class="tool-button" data-tool="fib" title="Fibonacci retracement">Fib</button>
-              <button type="button" class="tool-button" data-tool="vertical" title="Vertical line">│</button>
-              <button type="button" class="tool-button" data-tool="erase" title="Erase drawing">⌫</button>
-              <button type="button" class="tool-button" data-tool="clear" title="Clear all drawings">Clear</button>
+      <main class="portal">
+        <section class="hero card">
+          <div>
+            <p class="eyebrow">LIVE MARKET</p>
+            <h1>XAU/USD</h1>
+            <p class="hero-copy">Set a price. We watch the live feed through the API and send a Telegram message the moment it crosses your target.</p>
+          </div>
+          <div class="price-readout">
+            <div id="current-price" class="current-price">—</div>
+            <div class="price-meta">
+              <span id="price-source">—</span>
+              <span id="price-updated">—</span>
             </div>
           </div>
-          <div id="chart" class="chart"></div>
         </section>
 
-        <aside class="side-panel">
-          <section class="card">
-            <h2>Last price</h2>
-            <div id="last-price" class="last-price">—</div>
-            <div id="price-change" class="price-change">—</div>
-            <div class="quote-row"><span>Source</span><strong id="source">—</strong></div>
-            <div class="quote-row"><span>Last tick</span><strong id="last-tick">—</strong></div>
-            <div class="quote-row"><span>Bars</span><strong id="bar-count">0</strong></div>
-          </section>
-          <section class="card">
-            <h2>Indicators</h2>
-            <ul class="indicator-list">
-              <li>Volume <span class="tag">phase 7</span></li>
-              <li>EMA 9 / 21 <span class="tag">phase 7</span></li>
-              <li>EMA 20 / 50 <span class="tag">phase 7</span></li>
-              <li>RSI 14 <span class="tag">phase 7</span></li>
-              <li>VWAP <span class="tag">phase 7</span></li>
-            </ul>
-          </section>
-          <section class="card">
-            <h2>SMC / ICT detector</h2>
-            <div id="smc-counts" class="smc-counts">
-              <span class="muted">Waiting for analysis…</span>
+        <div class="portal-grid">
+          <section class="card form-card">
+            <div class="section-head">
+              <h2>Create notification</h2>
+              <span class="pill">Telegram</span>
             </div>
-            <div id="signal-list" class="signal-list"></div>
-            <p class="muted disclaimer">Heuristic structure signals from validated candles, not financial advice.</p>
+            <form id="alert-form">
+              <label for="alert-direction">When price goes</label>
+              <select id="alert-direction" name="direction">
+                <option value="above">Above my target</option>
+                <option value="below">Below my target</option>
+              </select>
+
+              <label for="alert-target">Target price (USD)</label>
+              <input id="alert-target" name="target" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="e.g. 2650.00" required />
+
+              <label for="alert-note">Note <span class="muted">(optional)</span></label>
+              <input id="alert-note" name="note" type="text" maxlength="120" placeholder="e.g. Take profit" />
+
+              <button type="submit">Create alert</button>
+            </form>
+            <p id="form-message" class="form-message" role="status"></p>
+            <p id="telegram-hint" class="telegram-hint">Checking Telegram configuration…</p>
           </section>
-        </aside>
+
+          <section class="card alerts-card">
+            <div class="section-head">
+              <h2>Active alerts</h2>
+              <span id="active-count" class="pill">0</span>
+            </div>
+            <div id="active-alerts" class="alert-list">
+              <p class="empty">No active alerts. Enter a target price above.</p>
+            </div>
+          </section>
+        </div>
+
+        <section class="card">
+          <div class="section-head">
+            <h2>History</h2>
+            <span class="muted">Triggered & cancelled</span>
+          </div>
+          <div id="alert-history" class="alert-list">
+            <p class="empty">Triggered and cancelled alerts will appear here.</p>
+          </div>
+        </section>
       </main>
 
       <footer class="footer">
-        <span id="footer-status">Waiting for data…</span>
-        <span>Lightweight Charts v5 · Backend WebSocket</span>
+        <span id="footer-status">Waiting for price…</span>
+        <span id="price-detail">—</span>
       </footer>
     </div>
     <script type="module" src="/src/main.js"></script>
